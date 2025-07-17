@@ -93,5 +93,6 @@
     "editor.defaultFormatter": "ms-azuretools.vscode-containers"
   },
   "biome.configurationPath": "biome.json",
-  "biome.lsp.bin": "node_modules/.bin/biome"
+  "biome.lsp.bin": "node_modules/.bin/biome",
+  "biome.enabled": true
 }
