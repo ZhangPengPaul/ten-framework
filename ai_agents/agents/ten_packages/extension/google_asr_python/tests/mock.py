@@ -12,7 +12,9 @@ def patch_google_asr_client():
     drive the extension/tester flow without real network calls.
     """
 
-    patch_target = "ten_packages.extension.google_asr_python.extension.GoogleASRClient"
+    patch_target = (
+        "ten_packages.extension.google_asr_python.extension.GoogleASRClient"
+    )
 
     def _fake_ctor(config, ten_env, on_result_callback, on_error_callback):
         class _FakeClient:

@@ -45,7 +45,10 @@ class GoogleAsrDumpTester(AsyncExtensionTester):
 
     async def _send_finalize(self, ten_env: AsyncTenEnvTester) -> None:
         finalize_id = f"finalize_{SESSION_ID}_{uuid.uuid4()}"
-        payload = {"finalize_id": finalize_id, "metadata": {"session_id": SESSION_ID}}
+        payload = {
+            "finalize_id": finalize_id,
+            "metadata": {"session_id": SESSION_ID},
+        }
         d = Data.create("asr_finalize")
         d.set_property_from_json(None, json.dumps(payload))
         await ten_env.send_data(d)
@@ -67,7 +70,9 @@ class GoogleAsrDumpTester(AsyncExtensionTester):
         await asyncio.sleep(0.5)
         ten_env.stop_test()
 
-    def _stop_with_error(self, ten_env: AsyncTenEnvTester, message: str) -> None:
+    def _stop_with_error(
+        self, ten_env: AsyncTenEnvTester, message: str
+    ) -> None:
         err = TenError.create(
             error_code=TenErrorCode.ErrorCodeGeneric,
             error_message=message,

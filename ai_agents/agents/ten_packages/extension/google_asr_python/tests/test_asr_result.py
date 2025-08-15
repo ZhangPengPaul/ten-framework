@@ -39,7 +39,9 @@ class GoogleAsrExtensionTester(AsyncExtensionTester):
 
     @override
     async def on_start(self, ten_env_tester: AsyncTenEnvTester) -> None:
-        self.sender_task = asyncio.create_task(self.audio_sender(ten_env_tester))
+        self.sender_task = asyncio.create_task(
+            self.audio_sender(ten_env_tester)
+        )
 
     def stop_test_if_checking_failed(
         self,
@@ -55,7 +57,9 @@ class GoogleAsrExtensionTester(AsyncExtensionTester):
             ten_env_tester.stop_test(err)
 
     @override
-    async def on_data(self, ten_env_tester: AsyncTenEnvTester, data: Data) -> None:
+    async def on_data(
+        self, ten_env_tester: AsyncTenEnvTester, data: Data
+    ) -> None:
         data_name = data.get_name()
         if data_name == "asr_result":
             data_json, _ = data.get_property_to_json()
@@ -69,7 +73,9 @@ class GoogleAsrExtensionTester(AsyncExtensionTester):
                 ten_env_tester, "text" in data_dict, f"text not in: {data_dict}"
             )
             self.stop_test_if_checking_failed(
-                ten_env_tester, "final" in data_dict, f"final not in: {data_dict}"
+                ten_env_tester,
+                "final" in data_dict,
+                f"final not in: {data_dict}",
             )
             self.stop_test_if_checking_failed(
                 ten_env_tester,

@@ -66,9 +66,13 @@ class GoogleAsrFinalizeTester(AsyncExtensionTester):
 
     @override
     async def on_start(self, ten_env_tester: AsyncTenEnvTester) -> None:
-        self.sender_task = asyncio.create_task(self.audio_sender(ten_env_tester))
+        self.sender_task = asyncio.create_task(
+            self.audio_sender(ten_env_tester)
+        )
 
-    def _stop_with_error(self, ten_env: AsyncTenEnvTester, message: str) -> None:
+    def _stop_with_error(
+        self, ten_env: AsyncTenEnvTester, message: str
+    ) -> None:
         err = TenError.create(
             error_code=TenErrorCode.ErrorCodeGeneric,
             error_message=message,
@@ -78,10 +82,19 @@ class GoogleAsrFinalizeTester(AsyncExtensionTester):
     def _validate_required_fields(
         self, ten_env: AsyncTenEnvTester, data_json: dict[str, Any]
     ) -> bool:
-        required = ["id", "text", "final", "start_ms", "duration_ms", "language"]
+        required = [
+            "id",
+            "text",
+            "final",
+            "start_ms",
+            "duration_ms",
+            "language",
+        ]
         missing = [k for k in required if k not in data_json]
         if missing:
-            self._stop_with_error(ten_env, f"Missing fields in asr_result: {missing}")
+            self._stop_with_error(
+                ten_env, f"Missing fields in asr_result: {missing}"
+            )
             return False
         return True
 
@@ -96,7 +109,9 @@ class GoogleAsrFinalizeTester(AsyncExtensionTester):
             recv_session_id = metadata.get("session_id")
 
             if self.finalize_id is None:
-                self._stop_with_error(ten_env, "No finalize_id stored for comparison")
+                self._stop_with_error(
+                    ten_env, "No finalize_id stored for comparison"
+                )
                 return
             if recv_finalize_id != self.finalize_id:
                 self._stop_with_error(
