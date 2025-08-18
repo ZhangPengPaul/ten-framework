@@ -16,6 +16,7 @@ import gzip
 import hmac
 import json
 import logging
+import time
 import uuid
 from hashlib import sha256
 from urllib.parse import urlparse
@@ -192,19 +193,7 @@ class AsrWsClient:
         # Add finalize-related state management
         self._finalize_requested = False
 
-        # Test simulation: Check if we should simulate reconnectable errors
-        self._test_error_simulation = None
-        self._error_simulation_count = 0
-        if self.appid == "test_reconnection_1003":
-            self._test_error_simulation = 1003  # Simulate rate limit error
-            self.ten_env.log_info(
-                "=== TEST MODE: Will simulate 1003 (Rate Limit) errors ==="
-            )
-        elif self.token == "simulate_server_busy":
-            self._test_error_simulation = 1005  # Simulate server busy error
-            self.ten_env.log_info(
-                "=== TEST MODE: Will simulate 1005 (Server Busy) errors ==="
-            )
+
         self._finalize_completed = False
         self._finalize_event = asyncio.Event()
 
@@ -234,26 +223,7 @@ class AsrWsClient:
                 res = await self.websocket.recv()
                 result = parse_response(res)
 
-                # Test simulation: Inject simulated errors for testing reconnection
-                if (
-                    self._test_error_simulation
-                    and self._error_simulation_count < 3
-                ):
-                    self._error_simulation_count += 1
-                    simulated_error_msg = f"Simulated ASR server error code: {self._test_error_simulation}"
-                    self.ten_env.log_info(
-                        f"=== SIMULATING ERROR {self._test_error_simulation} (attempt {self._error_simulation_count}/3) ==="
-                    )
-                    if self.on_error:
-                        try:
-                            await self.on_error(
-                                self._test_error_simulation, simulated_error_msg
-                            )
-                        except Exception as callback_error:
-                            self.ten_env.log_error(
-                                f"Error in simulated error callback: {callback_error}"
-                            )
-                    continue  # Continue to trigger reconnection
+
 
                 # Check result code, trigger error handling if not 1000
                 result_code = result.get("code")
@@ -420,8 +390,17 @@ class AsrWsClient:
         elif self.auth_method == "signature":
             header = self.signature_auth(full_client_request)
         self.websocket = await websockets.connect(
-            self.ws_url, additional_headers=header, max_size=1000000000
+            self.ws_url,
+            additional_headers=header,
+            max_size=1000000000,
+            ping_interval=30,  # Send ping every 30 seconds (less aggressive for 200ms packets)
+            ping_timeout=10,   # Wait 10 seconds for pong response
+            close_timeout=5    # Wait 5 seconds for close frame
         )
+        self.ten_env.log_info("WebSocket connected")
+
+        # Start ping monitoring task
+        asyncio.create_task(self._monitor_ping_pong())
         # Send full client request
         await self.websocket.send(bytes(full_client_request))
         # Start receiving messages coroutine
@@ -431,23 +410,36 @@ class AsrWsClient:
         if self.websocket is not None:
             await self.websocket.close()
             self.websocket = None
-            self.ten_env.log_info("Websocket connection closed.")
-        else:
-            self.ten_env.log_info("Websocket is not connected.")
+
+    async def _monitor_ping_pong(self):
+        """Monitor WebSocket ping/pong activity"""
+        try:
+            while self.websocket and self.websocket.state.name == "OPEN":
+                await asyncio.sleep(30)
+                if self.websocket:
+                    self.ten_env.log_debug("WebSocket connection active")
+        except Exception as e:
+            self.ten_env.log_error(f"Error in ping/pong monitor: {e}")
 
     async def send(self, chunk: bytes):
         if not self.websocket:
             self.ten_env.log_error("Websocket is None, cannot send audio")
             return
-        # if no compression, comment this line
+
+        # Compress and send audio data
         payload_bytes = gzip.compress(chunk)
         audio_only_request = bytearray(generate_audio_default_header())
         audio_only_request.extend(
             (len(payload_bytes)).to_bytes(4, "big")
         )  # payload size(4 bytes)
         audio_only_request.extend(payload_bytes)  # payload
+
         # Send audio-only client request
-        await self.websocket.send(bytes(audio_only_request))
+        try:
+            await self.websocket.send(bytes(audio_only_request))
+        except Exception as e:
+            self.ten_env.log_error(f"Failed to send audio via WebSocket: {e}")
+            raise
 
     def construct_request(self, reqid):
         req = {

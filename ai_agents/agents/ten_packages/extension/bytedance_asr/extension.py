@@ -34,6 +34,7 @@ from .const import (
     RECONNECTABLE_ERROR_CODES,
     FATAL_ERROR_CODES,
 )
+from .audio_buffer_manager import AudioBufferManager
 
 
 class BytedanceASRExtension(AsyncASRBaseExtension):
@@ -57,6 +58,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             None  # Track fatal errors to prevent unnecessary reconnection
         )
 
+        # Audio buffer manager for controlling audio chunk size
+        self.audio_buffer_manager: AudioBufferManager | None = None
+
     @override
     def vendor(self) -> str:
         """Get the name of the ASR vendor."""
@@ -72,9 +76,7 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         try:
             self.config = BytedanceASRConfig.model_validate_json(config_json)
             self.config.update(self.config.params)
-            ten_env.log_info(
-                f"KEYPOINT vendor_config: {self.config.to_json(sensitive_handling=True)}"
-            )
+            ten_env.log_info(f"Bytedance ASR config loaded")
 
             # Set reconnection parameters from config
             self.max_retries = self.config.max_retries
@@ -131,53 +133,31 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         self.attempts += 1
         delay = self.base_delay * (2 ** (self.attempts - 1))
 
-        env.log_info(
-            f"=== Starting reconnection === Attempt {self.attempts}, waiting {delay:.3f}s"
-        )
+        env.log_info(f"Reconnecting... Attempt {self.attempts}")
         await asyncio.sleep(delay)
-        env.log_info("=== Delay completed, starting reconnection ===")
 
         try:
             await self.stop_connection()
             await self.start_connection()
-            # Don't reset retry count here, wait for non-1001 error codes or normal messages
-            env.log_info(
-                "=== Reconnection established, waiting for validation ==="
-            )
         except Exception as e:
-            env.log_error(
-                f"=== Reconnection failed === Attempt {self.attempts} failed: {e}"
-            )
+            env.log_error(f"Reconnection failed: {e}")
             if self.attempts < self.max_retries and not self.stopped:
-                # Continue retrying if we have attempts left and extension isn't stopped
-                env.log_info(
-                    f"=== Preparing next retry === Progress: {self.attempts}/{self.max_retries}"
-                )
                 asyncio.create_task(self._handle_reconnect(env))
             else:
-                env.log_error("=== All retry attempts failed ===")
+                env.log_error("All retry attempts failed")
 
     async def on_finalize_complete_callback(self) -> None:
         """Callback function when ASR finalize is completed."""
-        self.ten_env.log_info(
-            "ASR finalize completed, sending finalize end signal"
-        )
         try:
             await self.send_asr_finalize_end()
-            self.ten_env.log_info("Sent asr_finalize_end signal from callback")
         except Exception as e:
-            self.ten_env.log_error(
-                f"Error sending asr_finalize_end signal from callback: {e}"
-            )
+            self.ten_env.log_error(f"Error sending asr_finalize_end signal: {e}")
 
     @override
     async def start_connection(self) -> None:
-        self.ten_env.log_info("start and listen bytedance_asr")
-
         if not self.config:
             config_json, _ = await self.ten_env.get_property_to_json("")
             self.config = BytedanceASRConfig.model_validate_json(config_json)
-            self.ten_env.log_info(f"config: {self.config}")
 
             if not self.config.appid:
                 raise ValueError("appid is required")
@@ -193,6 +173,7 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
                 not result
                 or "text" not in result[0]
                 or "utterances" not in result[0]
+                or not result[0]["utterances"]  # Check if utterances list is not empty
             ):
                 return
 
@@ -206,15 +187,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             is_final = result[0]["utterances"][0].get(
                 "definite", False
             )  # Use get to avoid KeyError
-            self.ten_env.log_info(
-                f"bytedance_asr got sentence: [{sentence}], is_final: {is_final}"
-            )
 
             # Received normal message, consider connection successful, reset retry count
             if self.attempts > 0:
-                self.ten_env.log_info(
-                    "=== Received normal message, connection successful, resetting retry count ==="
-                )
                 self.attempts = 0
 
             # Convert to ASRResult
@@ -315,6 +290,15 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             self.connected = True
             # Clear fatal error flag on successful connection
             self.last_fatal_error = None
+
+            # Initialize audio buffer manager
+            # 6400 bytes = 200ms at 16kHz (16000 * 2 bytes per sample * 0.2s)
+            # Following Bytedance official recommendation for streaming ASR
+            self.audio_buffer_manager = AudioBufferManager(
+                threshold_bytes=6400,
+                logger=self.ten_env
+            )
+            self.ten_env.log_info("Audio buffer manager initialized")
         except Exception as e:
             self.ten_env.log_error(f"Failed to start Bytedance ASR client: {e}")
             error_message = ModuleError(
@@ -330,16 +314,13 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             )
 
             await self.send_asr_error(error_message, vendor_info)
-            # Trigger reconnection on connection failure using error code 1007 (engine internal error)
+            # Trigger reconnection on connection failure
             if not self.stopped:
-                self.ten_env.log_info(
-                    "=== Initial connection failed, triggering reconnection ==="
-                )
                 asyncio.create_task(self._handle_reconnect(self.ten_env))
 
     @override
     async def stop_connection(self) -> None:
-        self.stopped = True  # Mark extension as stopped
+        # Don't set self.stopped = True here, as it prevents reconnection
         if self.client:
             await self.client.finish()
             self.client = None
@@ -349,7 +330,6 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         if self.audio_dumper:
             try:
                 await self.audio_dumper.stop()
-                self.ten_env.log_info("Audio dumper stopped successfully")
             except Exception as e:
                 self.ten_env.log_error(f"Error stopping audio dumper: {e}")
             finally:
@@ -359,15 +339,17 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         self.attempts = 0
         self.last_fatal_error = None
 
+        # Reset audio buffer manager
+        if self.audio_buffer_manager:
+            self.audio_buffer_manager.reset()
+            self.audio_buffer_manager = None
+
     @override
     async def send_audio(
         self, frame: AudioFrame, session_id: str | None
     ) -> bool:
         # Check if connection is closed due to fatal error
         if self.last_fatal_error:
-            self.ten_env.log_info(
-                f"Skipping audio send due to previous fatal error {self.last_fatal_error}"
-            )
             return False
 
         self.session_id = session_id
@@ -380,10 +362,29 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             self.audio_timeline.add_user_audio(
                 int(len(buf) / (self.input_audio_sample_rate() / 1000 * 2))
             )
-            if self.client:
+
+            # Check connection status before sending
+            if not self.connected or not self.client:
+                return False
+
+            # Check WebSocket connection state
+            if hasattr(self.client, 'websocket') and self.client.websocket:
+                if self.client.websocket.state.name == "CLOSED":
+                    return False
+
+            # Use audio buffer manager if available
+            if self.audio_buffer_manager and self.client:
+                await self.audio_buffer_manager.push_audio(
+                    bytes(buf),
+                    self.client.send
+                )
+                return True
+            elif self.client:
+                # Fallback to direct send if buffer manager not available
                 await self.client.send(bytes(buf))
                 return True
-            return False
+            else:
+                return False
         finally:
             frame.unlock_buf(buf)
 
@@ -391,15 +392,14 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         assert self.config is not None
 
         self.last_finalize_timestamp = int(datetime.now().timestamp() * 1000)
-        self.ten_env.log_debug(
-            f"KEYPOINT finalize start at {self.last_finalize_timestamp}"
-        )
 
         if not self.client or not self.connected:
-            self.ten_env.log_warn("ASR client not connected, skipping finalize")
             return
 
         try:
+            # Flush any remaining audio data in buffer before finalizing
+            if self.audio_buffer_manager and self.client:
+                await self.audio_buffer_manager.flush(self.client.send)
             # Send finalize signal to ASR client
             await self.client.finalize()
 
