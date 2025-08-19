@@ -87,7 +87,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             self.base_delay = self.config.base_delay
 
             if self.config.dump:
-                dump_file_path = os.path.join(self.config.dump_path, DUMP_FILE_NAME)
+                dump_file_path = os.path.join(
+                    self.config.dump_path, DUMP_FILE_NAME
+                )
                 self.audio_dumper = Dumper(dump_file_path)
                 await self.audio_dumper.start()
 
@@ -127,7 +129,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
 
         # Check if already reconnecting to prevent concurrent reconnections
         if self._reconnecting:
-            env.log_info("Reconnection already in progress, skipping duplicate request")
+            env.log_info(
+                "Reconnection already in progress, skipping duplicate request"
+            )
             return
 
         if self.attempts >= self.max_retries:
@@ -166,7 +170,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         try:
             await self.send_asr_finalize_end()
         except Exception as e:
-            self.ten_env.log_error(f"Error sending asr_finalize_end signal: {e}")
+            self.ten_env.log_error(
+                f"Error sending asr_finalize_end signal: {e}"
+            )
 
     @override
     async def start_connection(self) -> None:
@@ -188,7 +194,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
                 not result
                 or "text" not in result[0]
                 or "utterances" not in result[0]
-                or not result[0]["utterances"]  # Check if utterances list is not empty
+                or not result[0][
+                    "utterances"
+                ]  # Check if utterances list is not empty
             ):
                 return
 
@@ -278,7 +286,8 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
                 asyncio.create_task(self._handle_reconnect(self.ten_env))
             # Reset retry count for success codes and non-fatal errors
             elif error_code in [1000, 0] or (
-                error_code not in RECONNECTABLE_ERROR_CODES and error_code < 2000
+                error_code not in RECONNECTABLE_ERROR_CODES
+                and error_code < 2000
             ):
                 if self.attempts > 0:
                     self.ten_env.log_info(
@@ -367,7 +376,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
         #     self.audio_buffer_manager = None
 
     @override
-    async def send_audio(self, frame: AudioFrame, session_id: str | None) -> bool:
+    async def send_audio(
+        self, frame: AudioFrame, session_id: str | None
+    ) -> bool:
         # Check if connection is closed due to fatal error
         if self.last_fatal_error:
             return False
@@ -390,7 +401,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
             # Check connection status before sending
             if not self.connected or not self.client:
                 # Try to reconnect if connection is lost
-                self.ten_env.log_info("Connection lost, attempting to reconnect...")
+                self.ten_env.log_info(
+                    "Connection lost, attempting to reconnect..."
+                )
                 try:
                     await self.start_connection()
                     self.ten_env.log_info("Reconnection successful")
@@ -408,9 +421,13 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
                     )
                     try:
                         await self.start_connection()
-                        self.ten_env.log_info("WebSocket reconnection successful")
+                        self.ten_env.log_info(
+                            "WebSocket reconnection successful"
+                        )
                     except Exception as e:
-                        self.ten_env.log_error(f"WebSocket reconnection failed: {e}")
+                        self.ten_env.log_error(
+                            f"WebSocket reconnection failed: {e}"
+                        )
                         return False
             else:
                 # No WebSocket, try to reconnect
@@ -429,7 +446,9 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
 
             # Use audio buffer manager with smaller threshold for better responsiveness
             if self.audio_buffer_manager and self.client:
-                await self.audio_buffer_manager.push_audio(audio_data, self.client.send)
+                await self.audio_buffer_manager.push_audio(
+                    audio_data, self.client.send
+                )
                 return True
             elif self.client:
                 # Fallback to direct send if buffer manager not available
@@ -468,14 +487,18 @@ class BytedanceASRExtension(AsyncASRBaseExtension):
                     await self.audio_buffer_manager.flush(self.client.send)
 
             # Call the client's finalize method to send NEG_SEQUENCE flag
-            self.ten_env.log_info("Calling client finalize method to send NEG_SEQUENCE")
+            self.ten_env.log_info(
+                "Calling client finalize method to send NEG_SEQUENCE"
+            )
             await self.client.finalize()
 
             # Use timeout from configuration
             finalize_timeout = self.config.finalize_timeout
 
             # Wait for final result or timeout
-            finalize_success = await self.client.wait_for_finalize(finalize_timeout)
+            finalize_success = await self.client.wait_for_finalize(
+                finalize_timeout
+            )
 
             if finalize_success:
                 self.ten_env.log_info("ASR finalize completed successfully")

@@ -158,7 +158,9 @@ class AsrWsClient:
         self.nbest = int(kwargs.get("nbest", 1))
         self.appid = kwargs.get("appid", "")
         self.token = kwargs.get("token", "")
-        self.ws_url = kwargs.get("ws_url", "wss://openspeech.bytedance.com/api/v2/asr")
+        self.ws_url = kwargs.get(
+            "ws_url", "wss://openspeech.bytedance.com/api/v2/asr"
+        )
         self.uid = kwargs.get("uid", "streaming_asr_demo")
         self.workflow = kwargs.get(
             "workflow",
@@ -212,7 +214,9 @@ class AsrWsClient:
         while True:
             try:
                 if not self.websocket:
-                    self.ten_env.log_error("Websocket is None, cannot receive messages")
+                    self.ten_env.log_error(
+                        "Websocket is None, cannot receive messages"
+                    )
                     break
                 res = await self.websocket.recv()
                 result = parse_response(res)
@@ -221,15 +225,22 @@ class AsrWsClient:
                 payload_msg = result.get("payload_msg", {})
                 if isinstance(payload_msg, dict):
                     result_code = payload_msg.get("code")
-                    if result_code is not None and result_code != self.success_code:
-                        error_msg = f"ASR server returned error code: {result_code}"
+                    if (
+                        result_code is not None
+                        and result_code != self.success_code
+                    ):
+                        error_msg = (
+                            f"ASR server returned error code: {result_code}"
+                        )
                         # Add detailed error information for debugging
                         if "message" in payload_msg:
                             error_msg += f", message: {payload_msg['message']}"
                         if "reqid" in payload_msg:
                             error_msg += f", reqid: {payload_msg['reqid']}"
                         self.ten_env.log_error(error_msg)
-                        self.ten_env.log_error(f"Full payload_msg: {payload_msg}")
+                        self.ten_env.log_error(
+                            f"Full payload_msg: {payload_msg}"
+                        )
                         # Use error callback to handle non-1000 error codes
                         if self.on_error:
                             try:
@@ -245,14 +256,18 @@ class AsrWsClient:
                 await self.handle_received_message(result_data)
 
                 # Check if final result is received
-                if self._finalize_requested and result["payload_msg"].get("result"):
+                if self._finalize_requested and result["payload_msg"].get(
+                    "result"
+                ):
                     for item in result["payload_msg"]["result"]:
                         if "utterances" in item and item["utterances"]:
                             for utterance in item["utterances"]:
                                 if utterance.get("definite", False):
                                     self._finalize_completed = True
                                     self._finalize_event.set()
-                                    self.ten_env.log_info("Received final ASR result")
+                                    self.ten_env.log_info(
+                                        "Received final ASR result"
+                                    )
 
                                     # Reset finalize state after receiving final result
                                     self._finalize_requested = False
@@ -278,7 +293,9 @@ class AsrWsClient:
                 # Trigger reconnection if connection closes unexpectedly
                 if self.on_error:
                     try:
-                        await self.on_error(2001, f"WebSocket connection closed: {e}")
+                        await self.on_error(
+                            2001, f"WebSocket connection closed: {e}"
+                        )
                     except Exception as callback_error:
                         self.ten_env.log_error(
                             f"Error in connection closed callback: {callback_error}"
@@ -288,7 +305,9 @@ class AsrWsClient:
                 self.ten_env.log_error(f"WebSocket invalid state: {e}")
                 if self.on_error:
                     try:
-                        await self.on_error(2002, f"WebSocket invalid state: {e}")
+                        await self.on_error(
+                            2002, f"WebSocket invalid state: {e}"
+                        )
                     except Exception as callback_error:
                         self.ten_env.log_error(
                             f"Error in invalid state callback: {callback_error}"
@@ -298,7 +317,9 @@ class AsrWsClient:
                 self.ten_env.log_error(f"WebSocket protocol error: {e}")
                 if self.on_error:
                     try:
-                        await self.on_error(2003, f"WebSocket protocol error: {e}")
+                        await self.on_error(
+                            2003, f"WebSocket protocol error: {e}"
+                        )
                     except Exception as callback_error:
                         self.ten_env.log_error(
                             f"Error in protocol error callback: {callback_error}"
@@ -315,7 +336,9 @@ class AsrWsClient:
                         )
                 break
             except Exception as e:
-                self.ten_env.log_error(f"Unexpected error in receive_messages: {e}")
+                self.ten_env.log_error(
+                    f"Unexpected error in receive_messages: {e}"
+                )
                 if self.on_error:
                     try:
                         await self.on_error(1007, f"Unexpected error: {e}")
@@ -354,7 +377,9 @@ class AsrWsClient:
         audio_only_request.extend(payload_bytes)  # payload
 
         try:
-            self.ten_env.log_info("Sending final audio packet with NEG_SEQUENCE flag")
+            self.ten_env.log_info(
+                "Sending final audio packet with NEG_SEQUENCE flag"
+            )
             await self.websocket.send(bytes(audio_only_request))
             self._neg_sequence_sent = True
             self._finalize_requested = (
@@ -367,7 +392,9 @@ class AsrWsClient:
             self.ten_env.log_error(f"Failed to send NEG_SEQUENCE packet: {e}")
             if self.on_error:
                 try:
-                    await self.on_error(2001, f"Failed to send NEG_SEQUENCE: {e}")
+                    await self.on_error(
+                        2001, f"Failed to send NEG_SEQUENCE: {e}"
+                    )
                 except Exception as callback_error:
                     self.ten_env.log_error(
                         f"Error in NEG_SEQUENCE error callback: {callback_error}"
@@ -496,10 +523,14 @@ class AsrWsClient:
         try:
             await self.websocket.send(bytes(audio_only_request))
         except websockets.exceptions.ConnectionClosed as e:
-            self.ten_env.log_error(f"WebSocket connection closed during send: {e}")
+            self.ten_env.log_error(
+                f"WebSocket connection closed during send: {e}"
+            )
             if self.on_error:
                 try:
-                    await self.on_error(2001, f"WebSocket connection closed: {e}")
+                    await self.on_error(
+                        2001, f"WebSocket connection closed: {e}"
+                    )
                 except Exception as callback_error:
                     self.ten_env.log_error(
                         f"Error in send error callback: {callback_error}"
@@ -561,7 +592,9 @@ class AsrWsClient:
         input_data = bytearray(input_str, "utf-8")
         input_data += data
         mac = base64.urlsafe_b64encode(
-            hmac.new(self.secret.encode("utf-8"), input_data, digestmod=sha256).digest()
+            hmac.new(
+                self.secret.encode("utf-8"), input_data, digestmod=sha256
+            ).digest()
         )
         header_dicts["Authorization"] = (
             'HMAC256; access_token="{}"; mac="{}"; h="{}"'.format(
