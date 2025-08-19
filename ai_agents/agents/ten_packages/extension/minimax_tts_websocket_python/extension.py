@@ -17,7 +17,7 @@ from ten_ai_base.message import (
     ModuleVendorException,
     TTSAudioEndReason,
 )
-from ten_ai_base.struct import TTSTextInput, TTSFlush
+from ten_ai_base.struct import TTSTextInput
 from ten_ai_base.tts2 import AsyncTTS2BaseExtension
 
 from .config import MinimaxTTSWebsocketConfig
@@ -87,10 +87,13 @@ class MinimaxTTSWebsocketExtension(AsyncTTS2BaseExtension):
                     raise ValueError(error_msg)
 
             self.client = MinimaxTTSWebsocket(
-                self.config, ten_env, self.vendor()
+                self.config,
+                ten_env,
+                self.vendor(),
+                self._websocket_error_callback,
             )
             # Preheat websocket connection
-            await self.client.start()
+            asyncio.create_task(self.client.start())
             ten_env.log_info(
                 "MinimaxTTSWebsocket client initialized and preheated successfully"
             )
@@ -169,6 +172,30 @@ class MinimaxTTSWebsocketExtension(AsyncTTS2BaseExtension):
     def synthesize_audio_sample_rate(self) -> int:
         return self.config.sample_rate
 
+    async def _websocket_error_callback(
+        self, message: str, detail: str, is_fatal: bool = False
+    ) -> None:
+        """Callback for handling WebSocket errors from minimax_tts"""
+        error_code = (
+            ModuleErrorCode.FATAL_ERROR
+            if is_fatal
+            else ModuleErrorCode.NON_FATAL_ERROR
+        )
+
+        await self.send_tts_error(
+            self.current_request_id,
+            ModuleError(
+                message=f"{message}: {detail}",
+                module=ModuleType.TTS,
+                code=error_code,
+                vendor_info=ModuleErrorVendorInfo(
+                    vendor=self.vendor(),
+                    code="WEBSOCKET_ERROR",
+                    message=detail,
+                ),
+            ),
+        )
+
     def _calculate_audio_duration_ms(self) -> int:
         if self.config is None:
             return 0
@@ -178,10 +205,6 @@ class MinimaxTTSWebsocketExtension(AsyncTTS2BaseExtension):
             self.config.sample_rate * bytes_per_sample * channels
         )
         return int(duration_sec * 1000)
-
-    async def on_flush(self, t: TTSFlush) -> None:
-        # This logic is now handled in on_data to align with the bytedance example
-        pass
 
     async def request_tts(self, t: TTSTextInput) -> None:
         """
@@ -199,7 +222,10 @@ class MinimaxTTSWebsocketExtension(AsyncTTS2BaseExtension):
                     "TTS client is not initialized, attempting to reconnect..."
                 )
                 self.client = MinimaxTTSWebsocket(
-                    self.config, self.ten_env, self.vendor()
+                    self.config,
+                    self.ten_env,
+                    self.vendor(),
+                    self._websocket_error_callback,
                 )
                 await self.client.start()
                 self.ten_env.log_info("TTS client reconnected successfully.")

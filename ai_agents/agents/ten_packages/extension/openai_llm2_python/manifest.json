@@ -18,15 +18,17 @@
     "include": [
       "manifest.json",
       "property.json",
-      "**.tent",
       "**.py",
-      "README.md"
+      "README.md",
+      "requirements.txt"
     ]
   },
   "api": {
-    "interface": [{
-      "import_uri": "../../system/ten_ai_base/api/llm-interface.json"
-    }],
+    "interface": [
+      {
+        "import_uri": "../../system/ten_ai_base/api/llm-interface.json"
+      }
+    ],
     "property": {
       "properties": {
         "api_key": {

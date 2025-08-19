@@ -60,14 +60,20 @@
             {
               "type": "extension",
               "name": "tts",
-              "addon": "bytedance_tts_duplex",
+              "addon": "minimax_tts_websocket_python",
               "extension_group": "tts",
               "property": {
-                "appid": "${env:BYTEDANCE_TTS_APPID}",
-                "token": "${env:BYTEDANCE_TTS_TOKEN}",
-                "sample_rate": 24000,
-                "voice_type": "zh_female_shuangkuaisisi_moon_bigtts",
-                "api_url": "wss://openspeech.bytedance.com/api/v3/tts/bidirection"
+                "params": {
+                  "api_key": "${env:MINIMAX_TTS_API_KEY|}",
+                  "group_id": "${env:MINIMAX_TTS_GROUP_ID|}",
+                  "model": "speech-02-turbo",
+                  "audio_setting": {
+                    "sample_rate": 16000
+                  },
+                  "voice_setting": {
+                    "voice_id": "female-shaonv"
+                  }
+                }
               }
             },
             {

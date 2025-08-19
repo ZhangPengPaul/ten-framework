@@ -18,6 +18,8 @@ from ten_ai_base.struct import (
     LLMResponse,
     LLMResponseMessageDelta,
     LLMResponseMessageDone,
+    LLMResponseReasoningDelta,
+    LLMResponseReasoningDone,
     LLMResponseToolCall,
     parse_llm_response,
 )
@@ -40,6 +42,9 @@ class LLMExec:
         self.on_response: Optional[
             Callable[[AsyncTenEnv, str, str, bool], Awaitable[None]]
         ] = None
+        self.on_reasoning_response: Optional[
+            Callable[[AsyncTenEnv, str, str, bool], Awaitable[None]]
+        ] = None
         self.on_tool_call: Optional[
             Callable[[AsyncTenEnv, LLMToolMetadata], Awaitable[None]]
         ] = None
@@ -53,6 +58,7 @@ class LLMExec:
         )  # Lock to ensure thread-safe access
         self.contexts: list[LLMMessage] = []
         self.current_request_id: Optional[str] = None
+        self.current_text = None
 
     async def queue_input(self, item: str) -> None:
         await self.input_queue.put(item)
@@ -106,6 +112,10 @@ class LLMExec:
                 await self.current_task
             except asyncio.CancelledError:
                 self.ten_env.log_info("LLMExec processing cancelled.")
+                text = self.current_text
+                self.current_text = None
+                if self.on_response and text:
+                    await self.on_response(self.ten_env, "", text, True)
             except Exception as e:
                 self.ten_env.log_error(
                     f"Error processing input queue: {traceback.format_exc()}"
@@ -176,14 +186,29 @@ class LLMExec:
             case LLMResponseMessageDelta():
                 delta = llm_output.delta
                 text = llm_output.content
+                self.current_text = text
                 if delta and self.on_response:
                     await self.on_response(self.ten_env, delta, text, False)
                 if text:
                     await self._write_context(self.ten_env, "assistant", text)
             case LLMResponseMessageDone():
                 text = llm_output.content
+                self.current_text = None
                 if self.on_response and text:
                     await self.on_response(self.ten_env, "", text, True)
+            case LLMResponseReasoningDelta():
+                delta = llm_output.delta
+                text = llm_output.content
+                if delta and self.on_reasoning_response:
+                    await self.on_reasoning_response(
+                        self.ten_env, delta, text, False
+                    )
+            case LLMResponseReasoningDone():
+                text = llm_output.content
+                if self.on_reasoning_response and text:
+                    await self.on_reasoning_response(
+                        self.ten_env, "", text, True
+                    )
             case LLMResponseToolCall():
                 self.ten_env.log_info(
                     f"_handle_llm_response: invoking tool call {llm_output.name}"
