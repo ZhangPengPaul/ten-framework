@@ -2,11 +2,13 @@ import asyncio
 import os
 import json
 from collections.abc import Awaitable, Callable
+from google.protobuf import duration_pb2
 
 from google.cloud import speech_v2 as speech
 from google.cloud.speech_v2.types import (
     StreamingRecognitionConfig,
     StreamingRecognizeRequest,
+    StreamingRecognitionFeatures,
 )
 from google.api_core import exceptions as gcp_exceptions
 from google.api_core.client_options import ClientOptions
@@ -226,15 +228,47 @@ class GoogleASRClient:
         try:
             # First request contains the configuration
             config = self.config.get_recognition_config()
+            # Build voice activity timeout configuration
+            voice_activity_timeout = None
+            if (
+                self.config.speech_start_timeout_ms > 0
+                or self.config.speech_end_timeout_ms > 0
+            ):
+                # Create VoiceActivityTimeout object using the correct nested type
+                voice_activity_timeout = (
+                    StreamingRecognitionFeatures.VoiceActivityTimeout()
+                )
+
+                if self.config.speech_start_timeout_ms > 0:
+                    start_duration = duration_pb2.Duration()
+                    start_duration.seconds = (
+                        self.config.speech_start_timeout_ms // 1000
+                    )
+                    start_duration.nanos = (
+                        self.config.speech_start_timeout_ms % 1000
+                    ) * 1_000_000
+                    voice_activity_timeout.speech_start_timeout = start_duration
+
+                if self.config.speech_end_timeout_ms > 0:
+                    end_duration = duration_pb2.Duration()
+                    end_duration.seconds = (
+                        self.config.speech_end_timeout_ms // 1000
+                    )
+                    end_duration.nanos = (
+                        self.config.speech_end_timeout_ms % 1000
+                    ) * 1_000_000
+                    voice_activity_timeout.speech_end_timeout = end_duration
+
             streaming_config = StreamingRecognitionConfig(
                 config=config,
-                streaming_features={
-                    "interim_results": self.config.interim_results,
-                },
+                streaming_features=StreamingRecognitionFeatures(
+                    enable_voice_activity_events=self.config.enable_voice_activity_events,
+                    interim_results=self.config.interim_results,
+                    voice_activity_timeout=voice_activity_timeout,
+                ),
             )
             recognizer_path = self.config.get_recognizer_path()
-            if getattr(self.config, "enable_detailed_logging", False):
-                self.ten_env.log_debug(f"Streaming config: {streaming_config}")
+            self.ten_env.log_debug(f"Streaming config: {streaming_config}")
 
             # First request must contain recognizer and streaming_config, not audio
             # recognizer format: projects/{project}/locations/{location}/recognizers/{recognizer}
@@ -262,6 +296,7 @@ class GoogleASRClient:
                     self.ten_env.log_debug("Received end-of-stream signal")
                     break
                 yield speech.StreamingRecognizeRequest(audio=chunk)
+
         except Exception as e:
             self.ten_env.log_error(f"Error in audio generator: {e}")
             await self.on_error_callback(500, str(e))

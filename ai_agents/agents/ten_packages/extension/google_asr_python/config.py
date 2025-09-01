@@ -3,6 +3,7 @@
 # Licensed under the Apache License, Version 2.0.
 # See the LICENSE file for more information.
 #
+from ten_ai_base.utils import encrypt
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -51,6 +52,15 @@ class GoogleASRConfig(BaseModel):
         False  # Not used in V2 streaming_features; kept for compatibility
     )
     interim_results: bool = True  # Enable interim results
+
+    # Voice Activity Timeout settings for StreamingRecognitionFeatures
+    speech_start_timeout_ms: int = (
+        1000  # Timeout for speech start detection (0 = no timeout)
+    )
+    speech_end_timeout_ms: int = (
+        800  # Timeout for speech end detection (0 = no timeout)
+    )
+    enable_voice_activity_events: bool = True  # Enable voice activity events
 
     # Content filtering
     profanity_filter: bool = False  # Enable profanity filter
@@ -114,7 +124,32 @@ class GoogleASRConfig(BaseModel):
         # Handle sensitive data for logging/debugging
         config = self.model_copy(deep=True)
         if config.project_id:
-            config.project_id = "***"
+            config.project_id = encrypt(config.project_id)
+
+        if config.adc_credentials_path:
+            config.adc_credentials_path = encrypt(config.adc_credentials_path)
+
+        if config.adc_credentials_string:
+            config.adc_credentials_string = encrypt(
+                config.adc_credentials_string
+            )
+
+        if config.params:
+            # Guard for static analyzers: ensure dict semantics for params
+            params_dict: dict[str, Any] = (
+                dict(config.params) if isinstance(config.params, dict) else {}
+            )
+            for key, value in params_dict.items():
+                if key == "project_id":
+                    params_dict[key] = encrypt(value)
+
+                if key == "adc_credentials_path":
+                    params_dict[key] = encrypt(value)
+
+                if key == "adc_credentials_string":
+                    params_dict[key] = encrypt(value)
+
+            config.params = params_dict
 
         return config.model_dump_json()
 
