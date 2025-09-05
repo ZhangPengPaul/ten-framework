@@ -58,6 +58,10 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
         self.total_audio_bytes: int = 0
         # Background task for processing audio data
         self.audio_processor_task: asyncio.Task | None = None
+        # Flag indicating if the first chunk has been processed
+        self.first_chunk: bool = True
+        # Count of audio chunks received
+        self.chunk_count: int = 0
 
     async def on_init(self, ten_env: AsyncTenEnv) -> None:
         try:
@@ -78,6 +82,7 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
 
             # Initialize Cosy TTS client
             self.client = CosyTTSClient(self.config, ten_env, self.vendor())
+            self.client.start()
             self.audio_processor_task = asyncio.create_task(
                 self._process_audio_data()
             )
@@ -87,7 +92,7 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
 
     async def on_start(self, ten_env: AsyncTenEnv) -> None:
         await super().on_start(ten_env)
-        ten_env.log_info("on_start")
+        ten_env.log_debug("on_start")
 
     async def on_stop(self, ten_env: AsyncTenEnv) -> None:
         if self.audio_processor_task:
@@ -154,6 +159,9 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
                 self.current_request_finished = False
                 self.total_audio_bytes = 0  # Reset for new request
                 self.request_ttfb = None
+                self.first_chunk = True
+                self.chunk_count = 0
+                self.request_start_ts = datetime.now()
 
                 if t.metadata is not None:
                     self.current_turn_id = t.metadata.get("turn_id", -1)
@@ -165,10 +173,6 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
                 error_msg = f"Received a message for a finished request_id '{t.request_id}' with text_input_end=False."
                 self.ten_env.log_error(error_msg)
                 return
-
-            # Record TTFB timing
-            if self.request_start_ts is None:
-                self.request_start_ts = datetime.now()
 
             # Get audio stream from Cosy TTS
             self.ten_env.log_info(
@@ -211,9 +215,6 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
         Independent audio data process loop.
         This runs in the background and processes audio data from the client.
         """
-        chunk_count = 0
-        first_chunk = True
-
         try:
             self.ten_env.log_info("Starting audio process loop")
 
@@ -240,16 +241,16 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
                             and len(audio_chunk) > 0
                             and isinstance(audio_chunk, bytes)
                         ):
-                            chunk_count += 1
+                            self.chunk_count += 1
                             self.total_audio_bytes += len(audio_chunk)
                             self.ten_env.log_info(
-                                f"[tts] Received audio chunk #{chunk_count}, size: {len(audio_chunk)} bytes, current_request_id: {self.current_request_id}, current_turn_id: {self.current_turn_id}"
+                                f"[tts] Received audio chunk #{self.chunk_count}, size: {len(audio_chunk)} bytes, current_request_id: {self.current_request_id}, current_turn_id: {self.current_turn_id}, first_chunk: {self.first_chunk}"
                             )
 
                             # Send TTS audio start on first chunk
-                            if first_chunk:
+                            if self.first_chunk:
                                 await self._handle_first_audio_chunk()
-                                first_chunk = False
+                                self.first_chunk = False
 
                             # Write to dump file if enabled
                             await self._write_audio_to_dump_file(audio_chunk)
@@ -298,12 +299,6 @@ class CosyTTSExtension(AsyncTTS2BaseExtension):
                         code=ModuleErrorCode.NON_FATAL_ERROR.value,
                         vendor_info=ModuleErrorVendorInfo(vendor=self.vendor()),
                     )
-
-            self.ten_env.log_info(
-                f"Audio consumer completed, total chunks: {chunk_count}, current_request_id: {self.current_request_id}, current_turn_id: {self.current_turn_id}"
-            )
-            # Reset for next request
-            self.request_start_ts = None
 
         except Exception as e:
             self.ten_env.log_error(f"Fatal error in audio consumer: {e}")
