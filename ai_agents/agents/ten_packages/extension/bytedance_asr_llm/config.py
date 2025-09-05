@@ -24,16 +24,18 @@ class BytedanceASRLLMConfig(BaseModel):
     # Audio Configuration
     sample_rate: int = 16000
     audio_format: str = "pcm"  # Use PCM format for raw audio data
-    codec: str = "raw"         # Raw PCM data (default for PCM format)
+    codec: str = "raw"  # Raw PCM data (default for PCM format)
     bits: int = 16
     channel: int = 1
 
     # ASR Model Configuration
     model_name: str = "bigmodel"
-    model_version: str = "310"  # Model version: "310" (default) or "400" (better ITN performance)
+    model_version: str = (
+        "310"  # Model version: "310" (default) or "400" (better ITN performance)
+    )
     enable_itn: bool = True  # Enable Inverse Text Normalization
     enable_punc: bool = True  # Enable punctuation
-    enable_ddc: bool = True   # Enable speaker diarization
+    enable_ddc: bool = True  # Enable speaker diarization
     show_utterances: bool = True
     enable_nonstream: bool = True
 
@@ -45,7 +47,10 @@ class BytedanceASRLLMConfig(BaseModel):
     base_delay: float = 0.3
 
     # Audio Processing
-    segment_duration_ms: int = 200  # Audio segment duration in milliseconds
+    segment_duration_ms: int = 100  # Audio segment duration in milliseconds
+    end_window_size: int = (
+        200  # End window size in milliseconds for voice activity detection
+    )
 
     # Extension Configuration
     dump: bool = False
@@ -64,7 +69,7 @@ class BytedanceASRLLMConfig(BaseModel):
             "codec": self.codec,
             "rate": self.sample_rate,
             "bits": self.bits,
-            "channel": self.channel
+            "channel": self.channel,
         }
 
     def get_request_config(self) -> dict[str, Any]:  # type: ignore
@@ -77,15 +82,13 @@ class BytedanceASRLLMConfig(BaseModel):
             "enable_ddc": self.enable_ddc,
             "enable_nonstream": self.enable_nonstream,
             "show_utterances": self.show_utterances,
-            "enable_nonstream": self.enable_nonstream,
-            "result_type": "single"
+            "result_type": "single",
+            "end_window_size": self.end_window_size,
         }
 
     def get_user_config(self) -> dict[str, Any]:  # type: ignore
         """Get user configuration for ASR."""
-        return {
-            "uid": self.user_uid
-        }
+        return {"uid": self.user_uid}
 
     def update(self, params: dict[str, Any]) -> None:  # type: ignore
         """Update configuration with params from property.json."""

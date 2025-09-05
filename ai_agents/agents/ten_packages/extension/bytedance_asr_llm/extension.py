@@ -7,7 +7,8 @@ import asyncio
 import uuid
 import os
 import websockets
-from typing import Any, Optional
+
+# from typing import Any  # Not used
 from typing_extensions import override
 
 from ten_ai_base.asr import (
@@ -37,9 +38,7 @@ from .config import BytedanceASRLLMConfig
 from .volcengine_asr_client import VolcengineASRClient, ASRResponse
 from .const import (
     DUMP_FILE_NAME,
-    VOLCENGINE_ERROR_CODES,
     RECONNECTABLE_ERROR_CODES,
-    FATAL_ERROR_CODES,
 )
 
 
@@ -82,7 +81,9 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
         try:
             self.config = BytedanceASRLLMConfig.model_validate_json(config_json)
             self.config.update(self.config.params)
-            self.ten_env.log_info(f"Configuration loaded: {self.config.to_json(sensitive_handling=True)}")
+            self.ten_env.log_info(
+                f"Configuration loaded: {self.config.to_json(sensitive_handling=True)}"
+            )
 
             # Set reconnection parameters from config
             self.max_retries = self.config.max_retries
@@ -115,8 +116,6 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
     @override
     async def start_connection(self) -> None:
         """Start connection to Volcengine ASR service."""
-        self.ten_env.log_info("start_connection called")
-
         if not self.config:
             raise ValueError("Configuration not loaded")
 
@@ -125,21 +124,23 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
         if not self.config.access_key:
             raise ValueError("access_key is required")
 
-        self.ten_env.log_info(f"Starting connection to {self.config.api_url}")
-
         try:
             self.client = VolcengineASRClient(
                 url=self.config.api_url,
                 app_key=self.config.app_key,
                 access_key=self.config.access_key,
                 config=self.config,
-                ten_env=self.ten_env
+                ten_env=self.ten_env,
             )
 
             # Set up callbacks
             self.client.set_on_result_callback(self._on_asr_result)
-            self.client.set_on_connection_error_callback(self._on_connection_error)
-            self.client.set_on_asr_error_callback(self._on_asr_communication_error)
+            self.client.set_on_connection_error_callback(
+                self._on_connection_error
+            )
+            self.client.set_on_asr_error_callback(
+                self._on_asr_communication_error
+            )
             self.client.set_on_connected_callback(self._on_connected)
             self.client.set_on_disconnected_callback(self._on_disconnected)
 
@@ -147,7 +148,9 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
             self.connected = True
             self.attempts = 0  # Reset retry attempts on successful connection
 
-            self.ten_env.log_info("Successfully connected to Volcengine ASR service")
+            self.ten_env.log_info(
+                "Successfully connected to Volcengine ASR service"
+            )
 
         except Exception as e:
             self.ten_env.log_error(f"Failed to connect: {e}")
@@ -178,13 +181,27 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
     @override
     def is_connected(self) -> bool:
         """Check if connected to ASR service."""
+        # After finalize, connection may be closed by server (normal behavior)
+        # Only check connection if we haven't finalized recently
+        if self.last_finalize_timestamp > 0:
+            # Allow some time for final result to come back
+            current_time = int(asyncio.get_event_loop().time() * 1000)
+            if (
+                current_time - self.last_finalize_timestamp < 5000
+            ):  # 5 seconds grace period
+                return True  # Still consider connected during finalize grace period
+
         return self.connected and self.client is not None
 
     @override
-    async def send_audio(self, frame: AudioFrame, session_id: str | None) -> bool:
+    async def send_audio(
+        self, frame: AudioFrame, session_id: str | None
+    ) -> bool:
         """Send audio frame to ASR service."""
         if not self.is_connected():
-            self.ten_env.log_warn("Not connected to ASR service, attempting to reconnect...")
+            self.ten_env.log_warn(
+                "Not connected to ASR service, attempting to reconnect..."
+            )
             try:
                 await self.start_connection()
                 if not self.is_connected():
@@ -229,8 +246,12 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
             return
 
         try:
-            self.last_finalize_timestamp = int(asyncio.get_event_loop().time() * 1000)
-            self.ten_env.log_debug(f"Finalize start at {self.last_finalize_timestamp}")
+            self.last_finalize_timestamp = int(
+                asyncio.get_event_loop().time() * 1000
+            )
+            self.ten_env.log_debug(
+                f"Finalize start at {self.last_finalize_timestamp}"
+            )
 
             await self.client.finalize()
             # Don't send finalize end signal here - wait for final result
@@ -240,7 +261,9 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
     @override
     def buffer_strategy(self) -> ASRBufferConfig:
         """Get buffer strategy for audio processing."""
-        return ASRBufferConfigModeKeep(byte_limit=1024 * 1024 * 10)  # 10MB limit
+        return ASRBufferConfigModeKeep(
+            byte_limit=1024 * 1024 * 10
+        )  # 10MB limit
 
     @override
     def input_audio_sample_rate(self) -> int:
@@ -259,7 +282,7 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
 
     async def _handle_error(self, error: Exception) -> None:
         """Handle ASR errors."""
-        error_code = getattr(error, 'code', ModuleErrorCode.FATAL_ERROR.value)
+        error_code = getattr(error, "code", ModuleErrorCode.FATAL_ERROR.value)
 
         # Check if error is reconnectable
         if error_code in RECONNECTABLE_ERROR_CODES and not self.stopped:
@@ -293,7 +316,9 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
             self.attempts += 1
             delay = self.base_delay * (2 ** (self.attempts - 1))
 
-            self.ten_env.log_info(f"Reconnecting... Attempt {self.attempts}")
+            self.ten_env.log_info(
+                f"Reconnecting... Attempt {self.attempts}/{self.max_retries}"
+            )
             await asyncio.sleep(delay)
 
             try:
@@ -360,31 +385,35 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
     async def _finalize_end(self) -> None:
         """Handle finalization end logic."""
         if self.last_finalize_timestamp != 0:
-            timestamp = int(asyncio.get_event_loop().time() * 1000)
-            latency = timestamp - self.last_finalize_timestamp
-            self.ten_env.log_debug(f"Finalize end at {timestamp}, latency: {latency}ms")
             self.last_finalize_timestamp = 0
-
             # Send asr_finalize_end signal
             await self.send_asr_finalize_end()
+
+            # After finalize end, connection is expected to be closed by server
+            # This is normal behavior, so we don't need to reconnect
 
     async def _on_asr_error(self, error_code: int, error_message: str) -> None:
         """Handle ASR error from client."""
         self.ten_env.log_error(f"ASR error {error_code}: {error_message}")
-        # Create ModuleError object
-        module_error = ModuleError(
-            module=ModuleType.ASR,
-            code=ModuleErrorCode.NON_FATAL_ERROR.value,
-            message=error_message,
-        )
-        # Create ModuleErrorVendorInfo object
-        vendor_info = ModuleErrorVendorInfo(
-            vendor="volcengine_asr_llm",
-            code=str(error_code),
-            message=error_message,
-        )
-        # Call send_asr_error
-        await self.send_asr_error(module_error, vendor_info)
+
+        # Check if error is reconnectable
+        if error_code in RECONNECTABLE_ERROR_CODES and not self.stopped:
+            await self._handle_reconnect()
+        else:
+            # Create ModuleError object
+            module_error = ModuleError(
+                module=ModuleType.ASR,
+                code=ModuleErrorCode.NON_FATAL_ERROR.value,
+                message=error_message,
+            )
+            # Create ModuleErrorVendorInfo object
+            vendor_info = ModuleErrorVendorInfo(
+                vendor="volcengine_asr_llm",
+                code=str(error_code),
+                message=error_message,
+            )
+            # Call send_asr_error
+            await self.send_asr_error(module_error, vendor_info)
 
     def _on_connection_error(self, exception: Exception) -> None:
         """Handle connection-level errors (HTTP stage)."""
@@ -400,7 +429,8 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
         # Try to extract HTTP status code from error message
         if "HTTP" in error_message:
             import re
-            http_match = re.search(r'HTTP (\d+)', error_message)
+
+            http_match = re.search(r"HTTP (\d+)", error_message)
             if http_match:
                 error_code = int(http_match.group(1))
 
@@ -409,31 +439,45 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
 
     def _on_asr_communication_error(self, exception: Exception) -> None:
         """Handle ASR communication errors (WebSocket stage)."""
-        # ASR communication error handling logic
-        if isinstance(exception, websockets.exceptions.ConnectionClosed):
-            error_code = ModuleErrorCode.CONNECTION_ERROR.value
-        elif isinstance(exception, websockets.exceptions.InvalidMessage):
-            error_code = ModuleErrorCode.INVALID_PARAMETER.value
-        elif isinstance(exception, websockets.exceptions.WebSocketException):
-            error_code = ModuleErrorCode.CONNECTION_ERROR.value
-        else:
+        # Check if this is a server error response with a specific error code
+        if hasattr(exception, "code"):
+            # This is a server error response (like ServerErrorResponse)
+            # Keep the original error code for proper retry logic
+            error_code = getattr(
+                exception, "code", ModuleErrorCode.FATAL_ERROR.value
+            )
+            error_message = str(exception)
+        elif isinstance(exception, websockets.exceptions.ConnectionClosed):
+            # Connection closed - this might be retryable depending on context
             error_code = ModuleErrorCode.FATAL_ERROR.value
+            error_message = str(exception)
+        elif isinstance(exception, websockets.exceptions.InvalidMessage):
+            # Invalid message format - usually not retryable
+            error_code = ModuleErrorCode.FATAL_ERROR.value
+            error_message = str(exception)
+        elif isinstance(exception, websockets.exceptions.WebSocketException):
+            # General WebSocket error - might be retryable
+            error_code = ModuleErrorCode.FATAL_ERROR.value
+            error_message = str(exception)
+        else:
+            # Unknown exception - default to fatal
+            error_code = ModuleErrorCode.FATAL_ERROR.value
+            error_message = str(exception)
 
-        error_message = str(exception)
         asyncio.create_task(self._on_asr_error(error_code, error_message))
 
     def _on_asr_exception(self, exception: Exception) -> None:
         """Handle connection-level exceptions from client (adapter for error_callback)."""
-        error_code = getattr(exception, 'code', None)
+        error_code = getattr(exception, "code", None)
 
         if error_code is None:
             # Map connection exceptions to appropriate ModuleErrorCode values
             if isinstance(exception, ConnectionError):
-                error_code = ModuleErrorCode.CONNECTION_ERROR.value
+                error_code = ModuleErrorCode.FATAL_ERROR.value
             elif isinstance(exception, TimeoutError):
-                error_code = ModuleErrorCode.TIMEOUT_ERROR.value
+                error_code = ModuleErrorCode.FATAL_ERROR.value
             elif isinstance(exception, ValueError):
-                error_code = ModuleErrorCode.INVALID_PARAMETER.value
+                error_code = ModuleErrorCode.FATAL_ERROR.value
             else:
                 error_code = ModuleErrorCode.FATAL_ERROR.value
 
@@ -452,8 +496,5 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
 
     async def on_cmd(self, ten_env: AsyncTenEnv, cmd: Cmd) -> None:
         """Handle commands."""
-        cmd_name = cmd.get_name()
-        ten_env.log(LogLevel.DEBUG, f"on_cmd name {cmd_name}")
-
         cmd_result = CmdResult.create(StatusCode.OK, cmd)
         await ten_env.return_result(cmd_result)

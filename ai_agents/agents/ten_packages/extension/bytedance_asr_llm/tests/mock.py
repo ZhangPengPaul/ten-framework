@@ -15,7 +15,9 @@ import json
 def patch_volcengine_ws():
     """Mock Volcengine ASR WebSocket client and related components."""
 
-    patch_target = "ten_packages.extension.bytedance_asr_llm.extension.VolcengineASRClient"
+    patch_target = (
+        "ten_packages.extension.bytedance_asr_llm.extension.VolcengineASRClient"
+    )
 
     def _fake_ctor(url, app_key, access_key, config):
         class _FakeClient:
@@ -53,14 +55,21 @@ def patch_volcengine_ws():
                 # Schedule result emission
                 async def _emit_results():
                     print("[mock] _emit_results task started")
-                    await asyncio.sleep(0.5)  # Give more time for audio to be sent
+                    await asyncio.sleep(
+                        0.5
+                    )  # Give more time for audio to be sent
 
                     # Emit interim result
                     if self.on_result_callback:
                         print("[mock] About to emit interim result")
                         try:
-                            from ten_packages.extension.bytedance_asr_llm.volcengine_asr_client import ASRResponse
-                            from ten_packages.extension.bytedance_asr_llm.volcengine_asr_client import Utterance
+                            from ten_packages.extension.bytedance_asr_llm.volcengine_asr_client import (
+                                ASRResponse,
+                            )
+                            from ten_packages.extension.bytedance_asr_llm.volcengine_asr_client import (
+                                Utterance,
+                            )
+
                             interim_result = ASRResponse(
                                 text="hello",
                                 final=False,
@@ -70,35 +79,43 @@ def patch_volcengine_ws():
                                 payload_sequence=1,
                                 payload_size=0,
                                 payload_msg={
-                                    "result": [{
-                                        "text": "hello",
-                                        "utterances": [{
+                                    "result": [
+                                        {
                                             "text": "hello",
-                                            "start_time": 0,
-                                            "end_time": 1000,
-                                            "definite": False
-                                        }]
-                                    }]
+                                            "utterances": [
+                                                {
+                                                    "text": "hello",
+                                                    "start_time": 0,
+                                                    "end_time": 1000,
+                                                    "definite": False,
+                                                }
+                                            ],
+                                        }
+                                    ]
                                 },
                                 result={
                                     "text": "hello",
-                                    "utterances": [{
-                                        "text": "hello",
-                                        "start_time": 0,
-                                        "end_time": 1000,
-                                        "definite": False
-                                    }]
+                                    "utterances": [
+                                        {
+                                            "text": "hello",
+                                            "start_time": 0,
+                                            "end_time": 1000,
+                                            "definite": False,
+                                        }
+                                    ],
                                 },
-                                utterances=[Utterance(
-                                    text="hello",
-                                    start_time=0,
-                                    end_time=1000,
-                                    definite=False
-                                )],
+                                utterances=[
+                                    Utterance(
+                                        text="hello",
+                                        start_time=0,
+                                        end_time=1000,
+                                        definite=False,
+                                    )
+                                ],
                                 start_ms=0,
                                 duration_ms=1000,
                                 language="zh-CN",
-                                confidence=0.9
+                                confidence=0.9,
                             )
                             print("[mock] emitting interim asr_result")
                             await self.on_result_callback(interim_result)
@@ -106,7 +123,9 @@ def patch_volcengine_ws():
                         except Exception as e:
                             print(f"[mock] Error emitting interim result: {e}")
                     else:
-                        print("[mock] No on_result_callback set for interim result")
+                        print(
+                            "[mock] No on_result_callback set for interim result"
+                        )
 
                     await asyncio.sleep(0.5)
 
@@ -123,35 +142,43 @@ def patch_volcengine_ws():
                                 payload_sequence=2,
                                 payload_size=0,
                                 payload_msg={
-                                    "result": [{
-                                        "text": "hello world",
-                                        "utterances": [{
+                                    "result": [
+                                        {
                                             "text": "hello world",
-                                            "start_time": 0,
-                                            "end_time": 2000,
-                                            "definite": True
-                                        }]
-                                    }]
+                                            "utterances": [
+                                                {
+                                                    "text": "hello world",
+                                                    "start_time": 0,
+                                                    "end_time": 2000,
+                                                    "definite": True,
+                                                }
+                                            ],
+                                        }
+                                    ]
                                 },
                                 result={
                                     "text": "hello world",
-                                    "utterances": [{
-                                        "text": "hello world",
-                                        "start_time": 0,
-                                        "end_time": 2000,
-                                        "definite": True
-                                    }]
+                                    "utterances": [
+                                        {
+                                            "text": "hello world",
+                                            "start_time": 0,
+                                            "end_time": 2000,
+                                            "definite": True,
+                                        }
+                                    ],
                                 },
-                                utterances=[Utterance(
-                                    text="hello world",
-                                    start_time=0,
-                                    end_time=2000,
-                                    definite=True
-                                )],
+                                utterances=[
+                                    Utterance(
+                                        text="hello world",
+                                        start_time=0,
+                                        end_time=2000,
+                                        definite=True,
+                                    )
+                                ],
                                 start_ms=0,
                                 duration_ms=2000,
                                 language="zh-CN",
-                                confidence=0.95
+                                confidence=0.95,
                             )
                             print("[mock] emitting final asr_result")
                             await self.on_result_callback(final_result)
@@ -159,7 +186,9 @@ def patch_volcengine_ws():
                         except Exception as e:
                             print(f"[mock] Error emitting final result: {e}")
                     else:
-                        print("[mock] No on_result_callback set for final result")
+                        print(
+                            "[mock] No on_result_callback set for final result"
+                        )
 
                 print("[mock] Creating _emit_results task")
                 task = asyncio.create_task(_emit_results())

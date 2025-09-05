@@ -121,7 +121,9 @@ class BytedanceASRLLMExtensionTester(AsyncExtensionTester):
                 f"metadata is not in data_dict: {data_dict}",
             )
 
-            session_id: str = data_dict.get("metadata", {}).get("session_id", "")
+            session_id: str = data_dict.get("metadata", {}).get(
+                "session_id", ""
+            )
             self.stop_test_if_checking_failed(
                 ten_env_tester,
                 session_id == "123",
@@ -150,7 +152,7 @@ def test_asr_result(patch_volcengine_ws):  # type: ignore
             "app_key": "fake_app_key",
             "access_key": "fake_access_key",
             "sample_rate": 16000,
-            "language": "zh-CN"
+            "language": "zh-CN",
         }
     }
 
