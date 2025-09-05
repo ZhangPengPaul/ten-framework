@@ -25,16 +25,19 @@
         "params": {
           "type": "object",
           "properties": {
-            "appid": {
+            "app_key": {
               "type": "string"
             },
-            "token": {
+            "access_key": {
               "type": "string"
             },
             "language": {
               "type": "string"
             },
-            "cluster": {
+            "resource_id": {
+              "type": "string"
+            },
+            "model_version": {
               "type": "string"
             }
           }
