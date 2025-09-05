@@ -19,24 +19,34 @@ def patch_volcengine_ws():
         "ten_packages.extension.bytedance_asr_llm.extension.VolcengineASRClient"
     )
 
-    def _fake_ctor(url, app_key, access_key, config):
+    def _fake_ctor(url, app_key, access_key, config, ten_env=None):
         class _FakeClient:
-            def __init__(self, url, app_key, access_key, config):
+            def __init__(self, url, app_key, access_key, config, ten_env=None):
                 self.url = url
                 self.app_key = app_key
                 self.access_key = access_key
                 self.config = config
+                self.ten_env = ten_env
                 self.connected = False
                 self.on_result_callback = None
                 self.on_error_callback = None
+                self.on_connection_error_callback = None
+                self.on_asr_error_callback = None
                 self.on_connected_callback = None
                 self.on_disconnected_callback = None
+                self._emit_task = None
 
             def set_on_result_callback(self, callback):
                 self.on_result_callback = callback
 
             def set_on_error_callback(self, callback):
                 self.on_error_callback = callback
+
+            def set_on_connection_error_callback(self, callback):
+                self.on_connection_error_callback = callback
+
+            def set_on_asr_error_callback(self, callback):
+                self.on_asr_error_callback = callback
 
             def set_on_connected_callback(self, callback):
                 self.on_connected_callback = callback
@@ -55,9 +65,13 @@ def patch_volcengine_ws():
                 # Schedule result emission
                 async def _emit_results():
                     print("[mock] _emit_results task started")
-                    await asyncio.sleep(
-                        0.5
-                    )  # Give more time for audio to be sent
+                    try:
+                        await asyncio.sleep(
+                            0.5
+                        )  # Give more time for audio to be sent
+                    except asyncio.CancelledError:
+                        print("[mock] _emit_results task cancelled")
+                        return
 
                     # Emit interim result
                     if self.on_result_callback:
@@ -70,53 +84,51 @@ def patch_volcengine_ws():
                                 Utterance,
                             )
 
-                            interim_result = ASRResponse(
-                                text="hello",
-                                final=False,
-                                code=0,
-                                event=1,
-                                is_last_package=False,
-                                payload_sequence=1,
-                                payload_size=0,
-                                payload_msg={
-                                    "result": [
-                                        {
-                                            "text": "hello",
-                                            "utterances": [
-                                                {
-                                                    "text": "hello",
-                                                    "start_time": 0,
-                                                    "end_time": 1000,
-                                                    "definite": False,
-                                                }
-                                            ],
-                                        }
-                                    ]
-                                },
-                                result={
-                                    "text": "hello",
-                                    "utterances": [
-                                        {
-                                            "text": "hello",
-                                            "start_time": 0,
-                                            "end_time": 1000,
-                                            "definite": False,
-                                        }
-                                    ],
-                                },
-                                utterances=[
-                                    Utterance(
-                                        text="hello",
-                                        start_time=0,
-                                        end_time=1000,
-                                        definite=False,
-                                    )
+                            interim_result = ASRResponse()
+                            interim_result.text = "hello"
+                            interim_result.code = 0
+                            interim_result.event = 1
+                            interim_result.is_last_package = False
+                            interim_result.payload_sequence = 1
+                            interim_result.payload_size = 0
+                            interim_result.payload_msg = {
+                                "result": [
+                                    {
+                                        "text": "hello",
+                                        "utterances": [
+                                            {
+                                                "text": "hello",
+                                                "start_time": 0,
+                                                "end_time": 1000,
+                                                "definite": False,
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                            interim_result.result = {
+                                "text": "hello",
+                                "utterances": [
+                                    {
+                                        "text": "hello",
+                                        "start_time": 0,
+                                        "end_time": 1000,
+                                        "definite": False,
+                                    }
                                 ],
-                                start_ms=0,
-                                duration_ms=1000,
-                                language="zh-CN",
-                                confidence=0.9,
-                            )
+                            }
+                            interim_result.utterances = [
+                                Utterance(
+                                    text="hello",
+                                    start_time=0,
+                                    end_time=1000,
+                                    definite=False,
+                                )
+                            ]
+                            interim_result.start_ms = 0
+                            interim_result.duration_ms = 1000
+                            interim_result.language = "zh-CN"
+                            interim_result.confidence = 0.9
                             print("[mock] emitting interim asr_result")
                             await self.on_result_callback(interim_result)
                             print("[mock] interim result emitted successfully")
@@ -127,59 +139,61 @@ def patch_volcengine_ws():
                             "[mock] No on_result_callback set for interim result"
                         )
 
-                    await asyncio.sleep(0.5)
+                    try:
+                        await asyncio.sleep(0.5)
+                    except asyncio.CancelledError:
+                        print("[mock] _emit_results task cancelled during final result wait")
+                        return
 
                     # Emit final result
                     if self.on_result_callback:
                         print("[mock] About to emit final result")
                         try:
-                            final_result = ASRResponse(
-                                text="hello world",
-                                final=True,
-                                code=0,
-                                event=1,
-                                is_last_package=True,
-                                payload_sequence=2,
-                                payload_size=0,
-                                payload_msg={
-                                    "result": [
-                                        {
-                                            "text": "hello world",
-                                            "utterances": [
-                                                {
-                                                    "text": "hello world",
-                                                    "start_time": 0,
-                                                    "end_time": 2000,
-                                                    "definite": True,
-                                                }
-                                            ],
-                                        }
-                                    ]
-                                },
-                                result={
-                                    "text": "hello world",
-                                    "utterances": [
-                                        {
-                                            "text": "hello world",
-                                            "start_time": 0,
-                                            "end_time": 2000,
-                                            "definite": True,
-                                        }
-                                    ],
-                                },
-                                utterances=[
-                                    Utterance(
-                                        text="hello world",
-                                        start_time=0,
-                                        end_time=2000,
-                                        definite=True,
-                                    )
+                            final_result = ASRResponse()
+                            final_result.text = "hello world"
+                            final_result.code = 0
+                            final_result.event = 1
+                            final_result.is_last_package = True
+                            final_result.payload_sequence = 2
+                            final_result.payload_size = 0
+                            final_result.payload_msg = {
+                                "result": [
+                                    {
+                                        "text": "hello world",
+                                        "utterances": [
+                                            {
+                                                "text": "hello world",
+                                                "start_time": 0,
+                                                "end_time": 2000,
+                                                "definite": True,
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                            final_result.result = {
+                                "text": "hello world",
+                                "utterances": [
+                                    {
+                                        "text": "hello world",
+                                        "start_time": 0,
+                                        "end_time": 2000,
+                                        "definite": True,
+                                    }
                                 ],
-                                start_ms=0,
-                                duration_ms=2000,
-                                language="zh-CN",
-                                confidence=0.95,
-                            )
+                            }
+                            final_result.utterances = [
+                                Utterance(
+                                    text="hello world",
+                                    start_time=0,
+                                    end_time=2000,
+                                    definite=True,
+                                )
+                            ]
+                            final_result.start_ms = 0
+                            final_result.duration_ms = 2000
+                            final_result.language = "zh-CN"
+                            final_result.confidence = 0.95
                             print("[mock] emitting final asr_result")
                             await self.on_result_callback(final_result)
                             print("[mock] final result emitted successfully")
@@ -191,18 +205,28 @@ def patch_volcengine_ws():
                         )
 
                 print("[mock] Creating _emit_results task")
-                task = asyncio.create_task(_emit_results())
-                print(f"[mock] Task created: {task}")
+                self._emit_task = asyncio.create_task(_emit_results())
+                print(f"[mock] Task created: {self._emit_task}")
                 return None
 
             async def disconnect(self):
                 print("[mock] VolcengineASRClient.disconnect called")
                 self.connected = False
+
+                # Cancel the emit task if it's running
+                if self._emit_task and not self._emit_task.done():
+                    print("[mock] Cancelling _emit_task")
+                    self._emit_task.cancel()
+                    try:
+                        await self._emit_task
+                    except asyncio.CancelledError:
+                        print("[mock] _emit_task cancelled successfully")
+
                 if self.on_disconnected_callback:
                     self.on_disconnected_callback()
                 return None
 
-            async def send_audio(self, audio_data, session_id):
+            async def send_audio(self, audio_data):
                 print(f"[mock] send_audio called with {len(audio_data)} bytes")
                 return None
 
@@ -210,7 +234,7 @@ def patch_volcengine_ws():
                 print("[mock] listen called")
                 return None
 
-        return _FakeClient(url, app_key, access_key, config)
+        return _FakeClient(url, app_key, access_key, config, ten_env)
 
     with patch(patch_target) as MockClient:
         MockClient.side_effect = _fake_ctor
