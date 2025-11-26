@@ -281,7 +281,9 @@ class BytedanceASRLLMExtension(AsyncASRBaseExtension):
 
             # Record silence audio in timeline (client sends silence data)
             if self.config:
-                self.audio_timeline.add_silence_audio(self.config.silence_duration_ms)
+                self.audio_timeline.add_silence_audio(
+                    self.config.silence_duration_ms
+                )
         except Exception as e:
             self.ten_env.log_error(f"Error finalizing session: {e}")
 
